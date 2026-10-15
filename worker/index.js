@@ -47,7 +47,10 @@ async function cleanExpired(bucket, now) {
 }
 
 async function createTransfer(request, env) {
-  if (!env.BUCKET) return json({ error: "storage-unavailable" }, 503);
+  if (!env.BUCKET) {
+    console.error("storage-unavailable: BUCKET binding is missing");
+    return json({ error: "storage-unavailable" }, 503);
+  }
   const contentLengthHeader = request.headers.get("content-length");
   const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
   if (contentLength !== null && (!Number.isFinite(contentLength) || contentLength < MIN_BYTES)) return json({ error: "invalid-size" }, 400);
@@ -69,36 +72,38 @@ async function createTransfer(request, env) {
   }
   if (!code) return json({ error: "code-generation-failed" }, 503);
   const expiresAt = now + TTL_MS;
-  let streamedBytes = 0;
-  const magic = new Uint8Array(ENVELOPE_MAGIC.length);
-  let magicBytes = 0;
-  const boundedBody = request.body.pipeThrough(new TransformStream({
-    transform(chunk, controller) {
-      streamedBytes += chunk.byteLength;
-      if (streamedBytes > MAX_BYTES) return controller.error(new Error("too-large"));
-      if (magicBytes < magic.length) {
-        const take = Math.min(magic.length - magicBytes, chunk.byteLength);
-        magic.set(chunk.subarray(0, take), magicBytes);
-        magicBytes += take;
-        if (magicBytes === magic.length && !ENVELOPE_MAGIC.every((byte, index) => magic[index] === byte)) {
-          return controller.error(new Error("invalid-format"));
-        }
-      }
-      controller.enqueue(chunk);
-    },
-    flush(controller) {
-      if (streamedBytes < MIN_BYTES) controller.error(new Error("invalid-size"));
-      if (magicBytes < magic.length) controller.error(new Error("invalid-format"));
-    },
-  }));
+  const reader = request.body.getReader();
+  const chunks = [];
+  let length = 0;
   try {
-    await env.BUCKET.put(key, boundedBody, {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > MAX_BYTES) {
+        await reader.cancel();
+        return json({ error: "too-large" }, 413);
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return json({ error: "invalid-body" }, 400);
+  }
+  if (length < MIN_BYTES) return json({ error: "invalid-size" }, 400);
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  if (!ENVELOPE_MAGIC.every((byte, index) => body[index] === byte)) return json({ error: "invalid-format" }, 400);
+  try {
+    await env.BUCKET.put(key, body, {
       httpMetadata: { contentType: "application/octet-stream" },
       customMetadata: { expiresAt: String(expiresAt) },
     });
   } catch (error) {
-    if (error?.message === "too-large") return json({ error: "too-large" }, 413);
-    if (error?.message === "invalid-size" || error?.message === "invalid-format") return json({ error: error.message }, 400);
+    console.error("storage-write-failed", error?.name, String(error?.message ?? "unknown").slice(0, 160));
     return json({ error: "storage-write-failed" }, 503);
   }
   return json({ code, expiresAt: new Date(expiresAt).toISOString() }, 201);
