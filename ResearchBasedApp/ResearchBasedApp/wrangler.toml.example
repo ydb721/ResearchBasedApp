@@ -1,0 +1,7 @@
+name = "research-based-app"
+main = "dist/server/index.js"
+compatibility_date = "2026-10-15"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "REPLACE_WITH_YOUR_R2_BUCKET"
