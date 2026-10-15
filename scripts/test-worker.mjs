@@ -5,6 +5,7 @@ class MemoryBucket {
   objects = new Map();
   async head(key) { return this.objects.get(key) ?? null; }
   async put(key, body, options) {
+    assert.ok(body instanceof Uint8Array, "R2 receives a bounded byte array");
     const bytes = new Uint8Array(await new Response(body).arrayBuffer());
     this.objects.set(key, { key, bytes, size: bytes.length, customMetadata: options.customMetadata });
   }
