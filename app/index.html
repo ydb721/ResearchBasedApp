@@ -99,7 +99,7 @@
       const response=await fetch('/api/transfers',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:payload,cache:'no-store'});
       if(!response.ok){const e=await response.json().catch(()=>({}));throw new Error(e.error||`upload-${response.status}`);}
       const result=await response.json();$('transfer-code').textContent=result.code;$('expiry-note').textContent=expiryText(result.expiresAt);$('send-hash').textContent=hex(digest);$('send-result').classList.add('show');show(status,'success',`전송 전 SHA-256 계산 완료 · 암호화한 파일 ${sizeText(payload.length)} · 받는 기기에서도 이 사이트를 엽니다.`);
-    }catch(e){show(status,'error',e.message==='too-large'?'암호화된 파일이 서버 제한을 초과했습니다. 더 작은 ZIP으로 나눕니다.':e.message.startsWith('upload-')?'전송 서버에 연결하지 못했습니다. 잠시 후 다시 시도합니다.':'전송을 완료하지 못했습니다. 네트워크 연결과 파일을 확인한 뒤 다시 시도합니다.');}
+    }catch(e){show(status,'error',e.message==='too-large'?'암호화된 파일이 서버 제한을 초과했습니다. 더 작은 ZIP으로 나눕니다.':e.message==='storage-unavailable'?'서버 저장소가 연결되지 않았습니다. 서비스 설정 확인이 필요합니다.':e.message==='storage-write-failed'?'서버 저장소에 파일을 기록하지 못했습니다. 잠시 후 다시 시도합니다.':e.message.startsWith('upload-')?'전송 서버에 연결하지 못했습니다. 잠시 후 다시 시도합니다.':'전송을 완료하지 못했습니다. 네트워크 연결과 파일을 확인한 뒤 다시 시도합니다.');}
     finally{btn.innerHTML='암호화하고 전송 코드 만들기 <span aria-hidden="true">→</span>';setSendButton();}
   };
   $('copy-code').onclick=async()=>{const code=$('transfer-code').textContent;if(!code)return;try{await navigator.clipboard.writeText(code);show($('send-status'),'success','전송 코드를 복사했습니다.');}catch{show($('send-status'),'info','코드를 선택해 직접 복사합니다.');}};
